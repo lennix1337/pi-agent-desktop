@@ -24,6 +24,9 @@ Chromium/Electron apps (Slack, VS Code, Teams) return `TIMEOUT` on a full `snaps
 - Default delivery is semantic (accessibility actions, no cursor movement). `headed: true` moves the real mouse and keyboard and steals focus; use it only when a semantic action failed or the command is physical (`mouse-*`, `drag`, `hover`, `double-click`, `key-down/up`).
 - `close-app --force`, typing into password fields, notification actions and clipboard writes are effects: they need the task's authority like any other write.
 - `screenshot` returns an image; prefer `snapshot` text for reading.
+- Fewer turns: pass `verify: "<window id>"` on an action to get the after-screenshot in the same result instead of a separate `screenshot` call. Batch several presses or clicks only when no step depends on what the previous one showed.
+- Physical coordinates (`mouse-click --xy`) are virtual-desktop pixels: add the window's `bounds.x/y` from `list-windows` to a point inside the window screenshot. Run `focus-window` first.
+- Web pages inside a browser window usually expose nothing to `find`; use browser_harness, or screenshot + headed input when the session lives only in that window.
 
 ## More
 

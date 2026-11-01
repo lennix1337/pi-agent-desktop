@@ -23,7 +23,7 @@ export const ACT = new Set([
 
 export const COMMANDS = [...OBSERVE, ...ACT, ...PHYSICAL];
 
-export interface Params { command?: string; args?: string[]; headed?: boolean; offset?: number; limit?: number }
+export interface Params { command?: string; args?: string[]; headed?: boolean; offset?: number; limit?: number; verify?: string }
 export interface Result { value: unknown; text: string; image?: string; isError: boolean }
 export type Runner = (bin: string, args: string[], signal?: AbortSignal) => Promise<{ code: number; stdout: string; stderr: string }>;
 
@@ -55,6 +55,7 @@ export function plan(p: Params): { error: string } | { argv: string[] } {
   if (args.some(a => typeof a !== 'string')) return { error: 'args must be strings.' };
   if (args.includes('--headed')) return { error: 'Pass headed: true instead of --headed in args.' };
   if (PHYSICAL.has(command) && !p.headed) return { error: `${command} moves the real cursor/keyboard; set headed: true only when the task needs physical input.` };
+  if (p.verify !== undefined && OBSERVE.has(command)) return { error: 'verify attaches a screenshot after an action; observing commands need none.' };
   if (args.includes('--debug')) return { error: '--debug writes files beside the binary; not supported here.' };
   return { argv: [command, ...args, ...(p.headed ? ['--headed'] : [])] };
 }
@@ -82,7 +83,13 @@ export async function execute(p: Params, signal?: AbortSignal, runner: Runner = 
     let value: unknown;
     try { value = JSON.parse(out.stdout); } catch { value = { ok: out.code === 0, stdout: out.stdout.trim(), stderr: out.stderr.trim() }; }
     const ok = out.code === 0 && (value as { ok?: unknown }).ok !== false;
-    const image = shot && existsSync(shot) ? readFileSync(shot).toString('base64') : undefined;
+    let image = shot && existsSync(shot) ? readFileSync(shot).toString('base64') : undefined;
+    if (ok && p.verify) {
+      dir ??= mkdtempSync(join(tmpdir(), 'pi-agent-desktop-'));
+      const after = join(dir, 'after.png');
+      await runner(bin, ['screenshot', '--window-id', p.verify, after], signal);
+      if (existsSync(after)) image = readFileSync(after).toString('base64');
+    }
     const timedOut = argv[0] === 'snapshot' && (value as { error?: { code?: string } }).error?.code === 'TIMEOUT';
     if (timedOut) (value as Record<string, unknown>).hint = SNAPSHOT_TIMEOUT_HINT;
     const text = page(typeof value === 'string' ? value : JSON.stringify(value), p.offset, p.limit);

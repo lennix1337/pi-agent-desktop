@@ -10,6 +10,7 @@ export default function extension(pi: ExtensionAPI) {
       command: Type.Optional(Type.Unsafe<string>({ type: 'string', enum: COMMANDS, description: 'agent-desktop subcommand; default status.' })),
       args: Type.Optional(Type.Array(Type.String({ maxLength: 32768 }), { maxItems: 64, description: 'Arguments after the subcommand, e.g. ["--app","notepad.exe","-i"] or ["@e3"]. Run without a shell. Never include credentials without task authority.' })),
       headed: Type.Optional(Type.Boolean({ description: 'Physical input: real cursor/keyboard and focus changes.' })),
+      verify: Type.Optional(Type.String({ maxLength: 64, description: 'Window id (from list-windows) to screenshot right after a successful action; the PNG comes back in the same result, saving a separate screenshot call.' })),
       offset: Type.Optional(Type.Integer({ minimum: 0, description: 'Character offset into a long result.' })),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50000, description: 'Characters returned; default 12000.' })),
     }, { additionalProperties: false }),

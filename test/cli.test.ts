@@ -65,3 +65,23 @@ test('snapshot TIMEOUT carries a --max-depth 3 hint', async () => {
     fake('{"ok":false,"error":{"code":"TIMEOUT"}}', 1), 'bin');
   assert.doesNotMatch(other.text, /--max-depth/);
 });
+
+test('verify attaches a screenshot of the given window after the action, in the same call', async () => {
+  const calls: string[][] = [];
+  const r = await execute({ command: 'mouse-click', args: ['--xy', '10,20'], headed: true, verify: 'w-1' }, undefined, async (_b, args) => {
+    calls.push(args);
+    if (args[0] === 'screenshot') writeFileSync(args.at(-1)!, Buffer.from('after'));
+    return { code: 0, stdout: '{"ok":true}', stderr: '' };
+  }, 'bin');
+  assert.equal(calls[0][0], 'mouse-click');
+  assert.deepEqual(calls[1].slice(0, 3), ['screenshot', '--window-id', 'w-1']);
+  assert.equal(r.image, Buffer.from('after').toString('base64'));
+  assert.equal(r.isError, false);
+});
+
+test('verify is skipped when the action failed, and is refused on observing commands', async () => {
+  const calls: string[][] = [];
+  await execute({ command: 'click', args: ['@e1'], verify: 'w-1' }, undefined, async (_b, args) => { calls.push(args); return { code: 1, stdout: '{"ok":false}', stderr: '' }; }, 'bin');
+  assert.equal(calls.length, 1);
+  assert.ok('error' in plan({ command: 'snapshot', verify: 'w-1' }));
+});
