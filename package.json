@@ -1,6 +1,6 @@
 {
   "name": "@lennix1337/pi-agent-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Computer use for the Pi coding agent: see and control native Windows, macOS and Linux apps (click, type, read, screenshot) through the OS accessibility tree, powered by vercel-labs/agent-desktop.",
   "scripts": {
     "check": "tsc --noEmit",
