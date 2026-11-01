@@ -16,6 +16,8 @@ The `desktop` tool runs one `agent-desktop` subcommand per call, without a shell
 
 Refs expire when the UI changes: snapshot again before reusing one.
 
+Slow or Chromium/Electron apps (Slack, VS Code, Teams) can return `TIMEOUT` at the default 3 s deadline; raise it with `--timeout-ms 10000` once. If it still times out, the app does not expose its tree: use `screenshot` plus `headed` physical input, or the app's API/browser version. Native apps (Notepad, Explorer, Office dialogs) snapshot in about 0.2 s.
+
 ## Safety
 
 - The desktop is the user's live session. Act only on the apps and windows the task names; observing commands are always fine.
