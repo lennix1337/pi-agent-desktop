@@ -55,3 +55,13 @@ test('page truncates with a continuation offset', () => {
   assert.match(page(s, 0, 10), /repeat with offset 10/);
   assert.equal(page(s, 20, 10), 'xxxxx');
 });
+
+test('snapshot TIMEOUT carries a --max-depth 3 hint', async () => {
+  const r = await execute({ command: 'snapshot', args: ['--app', 'Slack.exe', '-i'] }, undefined,
+    fake('{"ok":false,"error":{"code":"TIMEOUT","message":"timed out"}}', 1), 'bin');
+  assert.equal(r.isError, true);
+  assert.match(r.text, /--max-depth 3/);
+  const other = await execute({ command: 'click', args: ['@e9'] }, undefined,
+    fake('{"ok":false,"error":{"code":"TIMEOUT"}}', 1), 'bin');
+  assert.doesNotMatch(other.text, /--max-depth/);
+});

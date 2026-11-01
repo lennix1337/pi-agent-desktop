@@ -59,6 +59,8 @@ export function plan(p: Params): { error: string } | { argv: string[] } {
   return { argv: [command, ...args, ...(p.headed ? ['--headed'] : [])] };
 }
 
+export const SNAPSHOT_TIMEOUT_HINT = 'Chromium/Electron trees time out at any --timeout-ms; retry with --max-depth 3 (measured: 129 ms on Slack), or use screenshot.';
+
 export function page(text: string, offset = 0, limit = 12000): string {
   if (offset === 0 && text.length <= limit) return text;
   const slice = text.slice(offset, offset + limit);
@@ -81,6 +83,8 @@ export async function execute(p: Params, signal?: AbortSignal, runner: Runner = 
     try { value = JSON.parse(out.stdout); } catch { value = { ok: out.code === 0, stdout: out.stdout.trim(), stderr: out.stderr.trim() }; }
     const ok = out.code === 0 && (value as { ok?: unknown }).ok !== false;
     const image = shot && existsSync(shot) ? readFileSync(shot).toString('base64') : undefined;
+    const timedOut = argv[0] === 'snapshot' && (value as { error?: { code?: string } }).error?.code === 'TIMEOUT';
+    if (timedOut) (value as Record<string, unknown>).hint = SNAPSHOT_TIMEOUT_HINT;
     const text = page(typeof value === 'string' ? value : JSON.stringify(value), p.offset, p.limit);
     return { value, text, image, isError: !ok };
   } finally {
