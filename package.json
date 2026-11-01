@@ -1,0 +1,56 @@
+{
+  "name": "@lennix1337/pi-agent-desktop",
+  "version": "0.1.0",
+  "description": "Pi extension: operate native desktop apps through vercel-labs/agent-desktop (OS accessibility tree).",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "e2e": "node --import tsx scripts/e2e-notepad.ts"
+  },
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "desktop",
+    "computer-use",
+    "accessibility"
+  ],
+  "type": "module",
+  "dependencies": {
+    "agent-desktop": "1.0.2",
+    "typebox": "1.3.27"
+  },
+  "license": "MIT",
+  "author": "lennix1337",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lennix1337/pi-agent-desktop.git"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "files": [
+    "src",
+    "skills",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=1.4.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "1.4.0",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=24.2.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
