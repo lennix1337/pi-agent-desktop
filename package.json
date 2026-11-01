@@ -1,18 +1,31 @@
 {
   "name": "@lennix1337/pi-agent-desktop",
   "version": "0.1.0",
-  "description": "Pi extension: operate native desktop apps through vercel-labs/agent-desktop (OS accessibility tree).",
+  "description": "Computer use for the Pi coding agent: see and control native Windows, macOS and Linux apps (click, type, read, screenshot) through the OS accessibility tree, powered by vercel-labs/agent-desktop.",
   "scripts": {
     "check": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
-    "e2e": "node --import tsx scripts/e2e-notepad.ts"
+    "e2e": "node --import tsx scripts/e2e-notepad.ts",
+    "release": "npm version patch -m \"release %s\" && git push --follow-tags"
   },
   "keywords": [
     "pi-package",
     "pi-extension",
-    "desktop",
+    "pi",
+    "pi-coding-agent",
     "computer-use",
-    "accessibility"
+    "desktop-automation",
+    "desktop",
+    "accessibility",
+    "ui-automation",
+    "rpa",
+    "agent",
+    "ai-agent",
+    "windows",
+    "macos",
+    "linux",
+    "agent-desktop",
+    "screenshot"
   ],
   "type": "module",
   "dependencies": {
@@ -36,7 +49,8 @@
   "files": [
     "src",
     "skills",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=1.4.0"
@@ -52,5 +66,9 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "homepage": "https://github.com/lennix1337/pi-agent-desktop#readme",
+  "bugs": {
+    "url": "https://github.com/lennix1337/pi-agent-desktop/issues"
   }
 }
