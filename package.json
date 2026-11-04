@@ -5,6 +5,8 @@
   "scripts": {
     "check": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
+    "verify": "npm run check && npm test",
+    "mutations": "node test/mutations.mjs",
     "e2e": "node --import tsx scripts/e2e-notepad.ts",
     "release": "npm version patch -m \"release %s\" && git push --follow-tags"
   },
