@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "checks": {
+    "verify": {
+      "argv": ["node", "--run", "verify"],
+      "timeoutMs": 120000,
+      "description": "TypeScript and all offline tests; no desktop input or provider calls"
+    },
+    "module": {
+      "argv": ["node", "--import", "tsx", "--test", "test/cli.test.ts"],
+      "timeoutMs": 30000,
+      "description": "Offline CLI planning, admission guards, paging and fake-runner screenshots"
+    },
+    "mutations": {
+      "argv": ["node", "test/mutations.mjs"],
+      "timeoutMs": 120000,
+      "description": "Offline boundary mutants in disposable copies; no real desktop actions"
+    }
+  }
+}
