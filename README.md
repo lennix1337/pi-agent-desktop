@@ -51,10 +51,13 @@ Not to be confused with [abcwyc/pi-agent-desktop](https://github.com/abcwyc/pi-a
 
 ```sh
 npm install
+npm run verify # types + all offline tests (same entry point as .pi/checks.json)
 npm run check   # types
 npm test        # unit + Pi loader test (runs the real binary's `version`)
 npm run e2e     # real desktop: opens Notepad, writes, reads back, screenshots, closes (Windows)
 ```
+
+Agents can discover `verify`, `module` (CLI tests only), and `mutations` in `.pi/checks.json`. These checks do not drive desktop apps; the real Notepad journey is separate.
 
 Override the binary with `PI_AGENT_DESKTOP_BIN`.
 
