@@ -60,6 +60,16 @@ export function plan(p: Params): { error: string } | { argv: string[] } {
   return { argv: [command, ...args, ...(p.headed ? ['--headed'] : [])] };
 }
 
+const UNEXPECTED_ARG = /unexpected argument '([^']+)'/;
+
+/** The long options a clap help text lists, with the closest one to the rejected flag when there is one. */
+export function optionsHint(help: string, rejected: string): string | undefined {
+  const options = [...new Set([...help.matchAll(/^\s+(?:-\w,\s+)?(--[a-z][\w-]*)/gm)].map(m => m[1]))].filter(o => o !== '--help');
+  if (!options.length) return undefined;
+  const close = rejected.startsWith('--') ? options.find(o => o.startsWith(rejected) || rejected.startsWith(o)) : undefined;
+  return `Valid options: ${options.join(', ')}.${close ? ` Did you mean ${close}?` : ''}`;
+}
+
 export const SNAPSHOT_TIMEOUT_HINT = 'Chromium/Electron trees time out at any --timeout-ms; retry with --max-depth 3 (measured: 129 ms on Slack), or use screenshot.';
 
 export function page(text: string, offset = 0, limit = 12000): string {
@@ -89,6 +99,12 @@ export async function execute(p: Params, signal?: AbortSignal, runner: Runner = 
       const after = join(dir, 'after.png');
       await runner(bin, ['screenshot', '--window-id', p.verify, after], signal);
       if (existsSync(after)) image = readFileSync(after).toString('base64');
+    }
+    const rejected = !ok ? UNEXPECTED_ARG.exec(String((value as { error?: { message?: unknown } }).error?.message ?? ''))?.[1] : undefined;
+    if (rejected && (value as { error?: { code?: string } }).error?.code === 'INVALID_ARGS') {
+      const help = await runner(bin, [argv[0], '--help'], signal);
+      const hint = help.code === 0 ? optionsHint(help.stdout, rejected) : undefined;
+      if (hint) (value as Record<string, unknown>).hint = hint;
     }
     const timedOut = argv[0] === 'snapshot' && (value as { error?: { code?: string } }).error?.code === 'TIMEOUT';
     if (timedOut) (value as Record<string, unknown>).hint = SNAPSHOT_TIMEOUT_HINT;
