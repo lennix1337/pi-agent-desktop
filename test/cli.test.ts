@@ -85,3 +85,30 @@ test('verify is skipped when the action failed, and is refused on observing comm
   assert.equal(calls.length, 1);
   assert.ok('error' in plan({ command: 'snapshot', verify: 'w-1' }));
 });
+
+const HELP = 'Capture the tree\n\nUsage: agent-desktop snapshot [OPTIONS]\n\nOptions:\n      --app <APP>            Filter\n      --window-id <window-id>  Scope to a window\n  -i, --interactive-only     Only interactive\n  -h, --help                 Print help\n';
+const invalid = (flag: string) => JSON.stringify({ ok: false, command: 'snapshot', error: { code: 'INVALID_ARGS', message: `error: unexpected argument '${flag}' found` } });
+
+test('an unexpected argument comes back with the command\'s real options and the closest one', async () => {
+  const calls: string[][] = [];
+  const runner: Runner = async (_bin, args) => {
+    calls.push(args);
+    return args.includes('--help') ? { code: 0, stdout: HELP, stderr: '' } : { code: 2, stdout: invalid('--window'), stderr: '' };
+  };
+  const r = await execute({ command: 'snapshot', args: ['--window', 'w-1'] }, undefined, runner, 'bin');
+  assert.equal(r.isError, true);
+  assert.deepEqual(calls.map(c => c.includes('--help')), [false, true]);
+  assert.deepEqual(calls[1], ['snapshot', '--help']);
+  const hint = String((r.value as { hint?: string }).hint);
+  assert.match(hint, /--window-id/);
+  assert.match(hint, /Did you mean --window-id\?/);
+  assert.match(hint, /--interactive-only/);
+});
+
+test('other failures do not trigger a help lookup', async () => {
+  const calls: string[][] = [];
+  const runner: Runner = async (_bin, args) => { calls.push(args); return { code: 1, stdout: '{"ok":false,"error":{"code":"STALE_REF","message":"unexpected argument \'x\'"}}', stderr: '' }; };
+  const r = await execute({ command: 'click', args: ['@e1'] }, undefined, runner, 'bin');
+  assert.equal(r.isError, true);
+  assert.equal(calls.length, 1);
+});
