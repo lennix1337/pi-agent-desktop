@@ -11,12 +11,13 @@ The `desktop` tool takes either `command: "exec"` with `code` (a cell: several s
 
 `code` is the body of an async JavaScript function. Helpers:
 
-- `win(app, title?)` picks a visible window by app-name prefix and title substring and sets `W`; the other helpers target `W`.
+- `win(app, title?)` picks a visible window by app-name prefix and title substring and sets `W`; the other helpers target `W`, and `press`/`keys` refuse until it is set.
+- `ad("launch", app, "--activate")` waits up to 30 s for a window, as long as the default cell: give that cell `timeout: 60`.
 - `snap(...args)` (`snapshot -i` of `W`), `find(...args)`, `click(ref)`, `type(ref, text)`, `press(combo)`, `keys(text)` (one press per character, for fields without a ref).
 - `at(x, y)` clicks and `wheel(dy, x?, y?)` scrolls at window-screenshot pixels (focus and offset handled); both need `headed: true`.
 - `shot()`, `sleep(ms)`, `print(...)`, `ad(command, ...args)` for any other subcommand.
 
-Values assigned without `let`/`const` persist to the next cell; `return` a value to see it. The cell stops at the first refused or failed step and reports every step it ran (`steps:`); calls made after it reported are refused, and calls it forgot to await are waited for. An acting cell returns a screenshot of `W`, so check it before the next cell. Example: `await win("notepad"); await keys("hello"); await press("ctrl+s")`.
+Values assigned without `let`/`const` persist to the next cell; `return` a value to see it. The cell stops at the first refused or failed step and reports every step it ran (`steps:`); calls made after it reported are refused, and calls it forgot to await are waited for. A cell that times out while its code still runs loses its variables, so that code cannot act later. An acting cell returns a screenshot of `W`, so check it before the next cell. Example: `await win("notepad"); await keys("hello"); await press("ctrl+s")`.
 
 ## Loop (single commands)
 
