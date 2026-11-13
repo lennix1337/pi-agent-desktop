@@ -86,11 +86,13 @@ export async function runCell(p: CellParams, signal?: AbortSignal, runner: Runne
     find: (...args: unknown[]) => call('find', [...target(), ...args]),
     click: (ref: string) => call('click', [ref]),
     type: (ref: string, text: string) => call('type', [ref, text]),
-    press: (combo: string) => call('press', [combo, ...target()]),
+    // Keys always name their window: without one they would land in whatever the operator has focused.
+    press: (combo: string) => call('press', [combo, '--window-id', current().id]),
     keys: async (text: string) => {
+      const id = current().id;
       for (const ch of text) {
         const key = KEY_NAMES[ch] ?? (/[A-Z]/.test(ch) ? `shift+${ch.toLowerCase()}` : ch);
-        await call('press', [key, ...target()], false);
+        await call('press', [key, '--window-id', id], false);
       }
       steps.push(`keys ${JSON.stringify(text)} (${[...text].length} presses)`);
     },
@@ -107,16 +109,23 @@ export async function runCell(p: CellParams, signal?: AbortSignal, runner: Runne
     shot: async () => { await call('screenshot', target()); return 'screenshot attached'; },
   });
 
-  let ret: unknown, error: string | undefined, timer: NodeJS.Timeout | undefined;
+  let ret: unknown, error: string | undefined, timer: NodeJS.Timeout | undefined, live = false;
   try {
     const fn = runInContext(`(async () => {\n${p.code}\n})`, context, { filename: 'desktop-cell.js' }) as () => Promise<unknown>;
     const timedOut = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new CellError(`cell timed out after ${seconds}s`)), deadline - Date.now()); });
-    ret = await Promise.race([fn(), timedOut]);
+    live = true;
+    ret = await Promise.race([fn().finally(() => { live = false; }), timedOut]);
   } catch (e) {
     error = e instanceof Error ? (e instanceof CellError ? e.message : `${e.name}: ${e.message}`) : String(e);
   } finally {
     clearTimeout(timer);
     closed = true;
+  }
+  // Code still running past the timeout looks helpers up in its own context: dropping that context
+  // leaves it with this ended cell's helpers, which refuse, instead of the next cell's.
+  if (live) {
+    if (context === ctx) context = undefined;
+    logs.push('note: the code was still running at the timeout, so the cell variables were dropped and it cannot act later');
   }
   // Calls the cell started but never awaited still finish here, so the answer lists every effect.
   if (running.size) {

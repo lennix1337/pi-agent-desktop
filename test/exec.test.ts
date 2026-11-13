@@ -28,6 +28,8 @@ beforeEach(() => resetCells());
 test('values assigned in one cell are there in the next', async () => {
   const d = desktop();
   await runCell({ code: 'n = 41' }, undefined, d.runner, 'bin');
+  // A cell that does not even parse leaves them alone.
+  assert.equal((await runCell({ code: 'return (' }, undefined, d.runner, 'bin')).isError, true);
   const r = await runCell({ code: 'return n + 1' }, undefined, d.runner, 'bin');
   assert.equal(r.isError, false);
   assert.match(r.text, /=> 42/);
@@ -87,16 +89,38 @@ test('a failing step stops the cell, names the steps that ran and still shows th
 
 test('a cell past its timeout returns, and its later desktop calls are refused', async () => {
   const d = desktop();
-  const r = await runCell({ code: 'await sleep(1500); await press("x")', timeout: 1 }, undefined, d.runner, 'bin');
+  const r = await runCell({ code: 'await sleep(1500); await ad("status")', timeout: 1 }, undefined, d.runner, 'bin');
   assert.equal(r.isError, true);
   assert.match(r.text, /timed out after 1s/);
   await new Promise(res => setTimeout(res, 700));
-  assert.ok(!d.names().includes('press'));
+  assert.ok(!d.names().includes('status'));
   // Nor can a call made after the cell reported act: every effect is in some cell's steps.
   const late = desktop();
   await runCell({ code: 'sleep(50).then(() => ad("status")).catch(() => {}); return 1' }, undefined, late.runner, 'bin');
   await new Promise(res => setTimeout(res, 200));
   assert.deepEqual(late.names(), []);
+});
+
+test('code still running after its cell timed out cannot act inside the next cell', async () => {
+  const d = desktop();
+  const first = await runCell({ code: 'n = 1; await sleep(1200); await ad("status")', timeout: 1 }, undefined, d.runner, 'bin');
+  assert.match(first.text, /timed out after 1s/);
+  assert.match(first.text, /variables were dropped/);
+  // The leftover wakes up while this cell runs: it must hit its own ended cell, not borrow this one.
+  const next = await runCell({ code: 'await sleep(600); return typeof n' }, undefined, d.runner, 'bin');
+  assert.equal(next.isError, false, next.text);
+  assert.match(next.text, /=> undefined/);
+  assert.deepEqual(d.names(), []);
+});
+
+test('keys and press without a chosen window are refused, never sent to whatever has focus', async () => {
+  const d = desktop();
+  const r = await runCell({ code: 'await keys("ab")' }, undefined, d.runner, 'bin');
+  assert.equal(r.isError, true);
+  assert.match(r.text, /call win\(app\) first/);
+  const p = await runCell({ code: 'await press("return")' }, undefined, d.runner, 'bin');
+  assert.equal(p.isError, true);
+  assert.deepEqual(d.names(), []);
 });
 
 test('a call the cell started without await finishes before the answer and is listed in its steps', async () => {
