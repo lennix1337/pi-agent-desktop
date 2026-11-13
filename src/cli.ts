@@ -47,12 +47,29 @@ export const run: Runner = (bin, args, signal) => new Promise(resolve => {
   });
 });
 
+/** Pointer commands that take one point as `--xy X,Y`; mouse-wheel alone takes `--x X --y Y`. */
+const XY_POINT = new Set(['mouse-click', 'mouse-move', 'mouse-down', 'mouse-up', 'hover']);
+
+/** Accept either point form on every pointer command and hand agent-desktop the one it parses. */
+function pointArgs(command: string, args: string[]): string[] {
+  if (command === 'mouse-wheel') {
+    const i = args.indexOf('--xy');
+    const [x, y] = i >= 0 ? (args[i + 1] ?? '').split(',') : [];
+    return x && y ? [...args.slice(0, i), '--x', x, '--y', y, ...args.slice(i + 2)] : args;
+  }
+  if (!XY_POINT.has(command)) return args;
+  const xi = args.indexOf('--x'), yi = args.indexOf('--y');
+  if (xi < 0 || yi < 0 || args.includes('--xy')) return args;
+  const rest = args.filter((_, j) => ![xi, xi + 1, yi, yi + 1].includes(j));
+  return [...rest.slice(0, Math.min(xi, yi)), '--xy', `${args[xi + 1]},${args[yi + 1]}`, ...rest.slice(Math.min(xi, yi))];
+}
+
 /** Validate a request; returns an error message or the argv to run. */
 export function plan(p: Params): { error: string } | { argv: string[] } {
   const command = p.command ?? 'status';
-  const args = p.args ?? [];
   if (!COMMANDS.includes(command)) return { error: `Unknown or unsupported command "${command}". Supported: ${COMMANDS.join(', ')}.` };
-  if (args.some(a => typeof a !== 'string')) return { error: 'args must be strings.' };
+  if ((p.args ?? []).some(a => typeof a !== 'string')) return { error: 'args must be strings.' };
+  const args = pointArgs(command, p.args ?? []);
   if (args.includes('--headed')) return { error: 'Pass headed: true instead of --headed in args.' };
   if (PHYSICAL.has(command) && !p.headed) return { error: `${command} moves the real cursor/keyboard; set headed: true only when the task needs physical input.` };
   if (p.verify !== undefined && OBSERVE.has(command)) return { error: 'verify attaches a screenshot after an action; observing commands need none.' };

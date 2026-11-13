@@ -24,6 +24,19 @@ test('physical commands require headed, which appends --headed', () => {
   assert.deepEqual(plan({ command: 'mouse-click', args: ['10', '10'], headed: true }), { argv: ['mouse-click', '10', '10', '--headed'] });
 });
 
+test('a point is accepted as --xy or --x/--y on every pointer command', () => {
+  // agent-desktop 1.0.2 takes --x/--y on mouse-wheel and --xy elsewhere; the agent should not need to know which.
+  assert.deepEqual(plan({ command: 'mouse-wheel', args: ['--xy', '1323,1043', '--dy', '-6'], headed: true }),
+    { argv: ['mouse-wheel', '--x', '1323', '--y', '1043', '--dy', '-6', '--headed'] });
+  assert.deepEqual(plan({ command: 'mouse-click', args: ['--x', '899', '--y', '1113'], headed: true }),
+    { argv: ['mouse-click', '--xy', '899,1113', '--headed'] });
+  assert.deepEqual(plan({ command: 'hover', args: ['--y', '5', '--x', '4'], headed: true }), { argv: ['hover', '--xy', '4,5', '--headed'] });
+  // The native form passes through untouched.
+  assert.deepEqual(plan({ command: 'mouse-wheel', args: ['--x', '1', '--y', '2', '--dy', '3'], headed: true }),
+    { argv: ['mouse-wheel', '--x', '1', '--y', '2', '--dy', '3', '--headed'] });
+  assert.deepEqual(plan({ command: 'mouse-move', args: ['--xy', '7,8'], headed: true }), { argv: ['mouse-move', '--xy', '7,8', '--headed'] });
+});
+
 test('execute parses JSON and flags ok:false as error', async () => {
   const good = await execute({ command: 'list-apps' }, undefined, fake('{"ok":true,"data":{"apps":[]}}'), 'bin');
   assert.equal(good.isError, false);
