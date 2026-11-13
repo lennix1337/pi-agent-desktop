@@ -25,8 +25,8 @@ Chromium/Electron apps (Slack, VS Code, Teams) return `TIMEOUT` on a full `snaps
 - `close-app --force`, typing into password fields, notification actions and clipboard writes are effects: they need the task's authority like any other write.
 - `screenshot` returns an image; prefer `snapshot` text for reading.
 - Fewer turns: pass `verify: "<window id>"` on an action to get the after-screenshot in the same result instead of a separate `screenshot` call. Batch several presses or clicks only when no step depends on what the previous one showed.
-- Physical coordinates (`mouse-click --xy`) are virtual-desktop pixels: add the window's `bounds.x/y` from `list-windows` to a point inside the window screenshot. Run `focus-window` first.
-- Web pages inside a browser window usually expose nothing to `find`; use browser_harness, or screenshot + headed input when the session lives only in that window.
+- Physical coordinates are virtual-desktop pixels: add the window's `bounds.x/y` from `list-windows` to a point inside the window screenshot. Run `focus-window` first. Every pointer command takes the point as `--xy X,Y` (or `--x X --y Y`); the tool converts to the form the binary parses.
+- Web pages inside a browser window usually expose nothing to `find`; use browser_harness, or screenshot + headed input when the session lives only in that window. `type` needs a snapshot ref, so without refs type into the focused field with one `press` per key (one Code Mode loop).
 
 ## More
 
