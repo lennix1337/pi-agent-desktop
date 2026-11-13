@@ -5,9 +5,20 @@ description: Operate native desktop apps (Windows, macOS, Linux) from Pi through
 
 # pi-agent-desktop
 
-The `desktop` tool runs one `agent-desktop` subcommand per call, without a shell, and returns its JSON.
+The `desktop` tool takes either `command: "exec"` with `code` (a cell: several steps in one call) or one `agent-desktop` subcommand, run without a shell, returning its JSON.
 
-## Loop
+## Cells (default for more than one step)
+
+`code` is the body of an async JavaScript function. Helpers:
+
+- `win(app, title?)` picks a visible window by app-name prefix and title substring and sets `W`; the other helpers target `W`.
+- `snap(...args)` (`snapshot -i` of `W`), `find(...args)`, `click(ref)`, `type(ref, text)`, `press(combo)`, `keys(text)` (one press per character, for fields without a ref).
+- `at(x, y)` clicks and `wheel(dy, x?, y?)` scrolls at window-screenshot pixels (focus and offset handled); both need `headed: true`.
+- `shot()`, `sleep(ms)`, `print(...)`, `ad(command, ...args)` for any other subcommand.
+
+Values assigned without `let`/`const` persist to the next cell; `return` a value to see it. The cell stops at the first refused or failed step and reports every step it ran (`steps:`); calls made after it reported are refused, and calls it forgot to await are waited for. An acting cell returns a screenshot of `W`, so check it before the next cell. Example: `await win("notepad"); await keys("hello"); await press("ctrl+s")`.
+
+## Loop (single commands)
 
 1. Find the target: `list-apps`, then `list-windows` with `["--app","<name>"]`. Several windows of one app give `AMBIGUOUS_TARGET`: pass `--window-id <id>`.
 2. Observe: `snapshot` with `["--app","<name>","-i"]` (interactive elements with `@e` refs). Large trees: add `--skeleton`, or page with `offset`.
@@ -26,7 +37,7 @@ Chromium/Electron apps (Slack, VS Code, Teams) return `TIMEOUT` on a full `snaps
 - `screenshot` returns an image; prefer `snapshot` text for reading.
 - Fewer turns: pass `verify: "<window id>"` on an action to get the after-screenshot in the same result instead of a separate `screenshot` call. Batch several presses or clicks only when no step depends on what the previous one showed.
 - Physical coordinates are virtual-desktop pixels: add the window's `bounds.x/y` from `list-windows` to a point inside the window screenshot. Run `focus-window` first. Every pointer command takes the point as `--xy X,Y` (or `--x X --y Y`); the tool converts to the form the binary parses.
-- Web pages inside a browser window usually expose nothing to `find`; use browser_harness, or screenshot + headed input when the session lives only in that window. `type` needs a snapshot ref, so without refs type into the focused field with one `press` per key (one Code Mode loop).
+- Web pages inside a browser window usually expose nothing to `find`; use browser_harness, or screenshot + headed input when the session lives only in that window. `type` needs a snapshot ref, so without refs use `keys(text)` in a cell.
 
 ## More
 

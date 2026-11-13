@@ -22,6 +22,9 @@ test('Pi loads the package: desktop tool and skill are discoverable, status runs
     const res = await tool.execute('t', { command: 'version' }, undefined, undefined, {} as never);
     assert.equal(res.isError, false, JSON.stringify(res.content));
     assert.match((res.content[0] as { text: string }).text, /version/);
+    const cell = await tool.execute('t', { command: 'exec', code: 'v = await ad("version"); return typeof v' }, undefined, undefined, {} as never);
+    assert.equal(cell.isError, false, JSON.stringify(cell.content));
+    assert.match((cell.content[0] as { text: string }).text, /=> object\nsteps: version/);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
