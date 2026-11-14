@@ -19,10 +19,12 @@ The `desktop` tool takes either `command: "exec"` with `code` (a cell: several s
 
 Values assigned without `let`/`const` persist to the next cell; `return` a value to see it. The cell stops at the first refused or failed step and reports every step it ran (`steps:`); calls made after it reported are refused, and calls it forgot to await are waited for. A cell that times out while its code still runs loses its variables, so that code cannot act later. An acting cell returns a screenshot of `W`, so check it before the next cell. Example: `await win("notepad"); await keys("hello"); await press("ctrl+s")`.
 
+A long output is cut (default 12000 characters, `limit`), with `steps:` and `error:` right after the cut. An `exec` call with `offset` reads on in the stored output of the last cell and runs nothing, so nothing is clicked or typed twice; `code` may be left out. With no stored output, or with other code, it is refused, not run.
+
 ## Loop (single commands)
 
 1. Find the target: `list-apps`, then `list-windows` with `["--app","<name>"]`. Several windows of one app give `AMBIGUOUS_TARGET`: pass `--window-id <id>`.
-2. Observe: `snapshot` with `["--app","<name>","-i"]` (interactive elements with `@e` refs). Large trees: add `--skeleton`, or page with `offset`.
+2. Observe: `snapshot` with `["--app","<name>","-i"]` (interactive elements with `@e` refs). Large trees: add `--skeleton`, or page with `offset` (a single command runs again for each page, so page only commands that observe).
 3. Act on a ref: `click ["@e5"]`, `type ["@e7","text"]`, `set-value`, `press ["ctrl+s"]`, `select`, `check`.
 4. Verify: snapshot again, or `wait` with `--text`/`--element`. A successful act result is not proof the app did what you wanted.
 

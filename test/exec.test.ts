@@ -139,3 +139,56 @@ test('errors in the code itself come back as text, with nothing run', async () =
   assert.match(r.text, /ReferenceError: nope is not defined/);
   assert.equal(d.calls.length, 0);
 });
+
+test('offset reads on in the output of the last cell and runs nothing', async () => {
+  const d = desktop();
+  const code = 'await win("brave"); await click("@e1"); await press("tab"); return "x".repeat(20000)';
+  const first = await runCell({ code }, undefined, d.runner, 'bin');
+  assert.equal(first.isError, false, first.text);
+  const sent = d.calls.length;
+  // The notice says to repeat the call with the offset: that must not click and press a second time.
+  const rest = await runCell({ code, offset: 12000 }, undefined, d.runner, 'bin');
+  assert.equal(d.calls.length, sent, `reading on sent ${d.calls.length - sent} more commands to the desktop`);
+  assert.equal(rest.isError, false, rest.text);
+  assert.equal(rest.text, 'x'.repeat(8003));
+  assert.equal(rest.image, undefined);
+  // The code may be left out: the offset alone asks for more of the last output.
+  const again = await runCell({ offset: 12000, limit: 5 }, undefined, d.runner, 'bin');
+  assert.equal(again.text, 'xxxxx\n[truncated: 20003 chars; repeat with offset 12005, which reads on in this output and runs nothing]');
+  assert.equal(d.calls.length, sent);
+});
+
+test('a long output is cut before the steps, so the first page lists what ran', async () => {
+  const d = desktop();
+  const r = await runCell({ code: 'await win("brave"); await press("tab"); return "x".repeat(20000)' }, undefined, d.runner, 'bin');
+  assert.match(r.text, /^=> x{11997}\n\[truncated: 20003 chars; repeat with offset 12000, which reads on in this output and runs nothing\]\nsteps: list-windows · press tab --window-id w-2 · screenshot --window-id w-2 \(after\)$/);
+});
+
+test('a failing cell with a long output still shows its error on the first page', async () => {
+  const d = desktop('click');
+  const r = await runCell({ code: 'await win("brave"); print("x".repeat(20000)); await press("a"); await click("@e1")' }, undefined, d.runner, 'bin');
+  assert.equal(r.isError, true);
+  assert.match(r.text, /repeat with offset 12000[^\n]*\]\nsteps: [^\n]*click @e1 FAILED[^\n]*\nerror: click failed: ACTION_FAILED: nope$/);
+});
+
+test('offset without a matching stored output is refused with the next step, never run', async () => {
+  const d = desktop();
+  // Nothing stored: no cell has run since the tool loaded.
+  const none = await runCell({ code: 'await win("brave"); await press("tab")', offset: 12000 }, undefined, d.runner, 'bin');
+  assert.equal(none.isError, true, none.text);
+  assert.match(none.text, /no cell has run since the tool loaded\. Nothing ran\. Run the code without offset/);
+
+  await runCell({ code: 'await win("brave"); return "x".repeat(20000)' }, undefined, d.runner, 'bin');
+  const sent = d.calls.length;
+  const other = await runCell({ code: 'await win("brave"); await press("tab")', offset: 12000 }, undefined, d.runner, 'bin');
+  assert.equal(other.isError, true, other.text);
+  assert.match(other.text, /this is not its code\. Nothing ran\./);
+  const past = await runCell({ offset: 30000 }, undefined, d.runner, 'bin');
+  assert.equal(past.isError, true, past.text);
+  assert.match(past.text, /offset 30000 is past the end of the last cell's output \(20003 chars\)\. Nothing ran\./);
+
+  resetCells();
+  const forgotten = await runCell({ offset: 12000 }, undefined, d.runner, 'bin');
+  assert.match(forgotten.text, /no cell has run since the tool loaded/);
+  assert.equal(d.calls.length, sent);
+});

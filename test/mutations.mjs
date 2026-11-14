@@ -18,6 +18,10 @@ const cases = [
   ['cell-headed-observe', 'headed: observe ? undefined : p.headed', 'headed: p.headed', 'acting cell comes back', 'exec'],
   ['cell-refusal', "if ('error' in planned) throw", "if (false) throw", 'only when headed', 'exec'],
   ['cell-after-shot', 'if (acted && !shotAfterAct && w?.id)', 'if (false)', 'acting cell comes back', 'exec'],
+  ['cell-offset-reads', 'if (p.offset) return readOn(p, p.offset);', '', 'offset reads on', 'exec'],
+  ['cell-offset-other-code', 'if (p.code?.trim() && p.code !== last.code)', 'if (false)', 'offset without a matching', 'exec'],
+  ['cell-offset-past-end', 'if (offset >= last.output.length)', 'if (false)', 'offset without a matching', 'exec'],
+  ['cell-steps-after-cut', "[...paged, ...summary].join('\\n')", "page([...lines, ...summary].join('\\n'), 0, p.limit, READS_ON)", 'cut before the steps', 'exec'],
 ];
 
 for (const [name, before, after, pattern, file = 'cli'] of cases) {

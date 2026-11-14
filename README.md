@@ -28,7 +28,7 @@ Pi gets one **`desktop` tool** and a **`pi-agent-desktop` skill** that teaches t
 3. Act on a ref: `click`, `set-value`, `type`, `press`, `launch`, `close-app`...
 4. Verify with `get` or a fresh `snapshot`; `screenshot` attaches a PNG when the tree is not enough.
 
-Several steps go in one call as a **cell** (`command: "exec"`, `code`): async JavaScript with `win`, `snap`, `click`, `type`, `keys`, `press`, `at`, `wheel`, `shot` and `ad` helpers, values kept between cells, the same allow-list and `headed` rule per step, a stop at the first failed step, and a screenshot of the window after any action. It is the desktop counterpart of browser_harness's `exec`.
+Several steps go in one call as a **cell** (`command: "exec"`, `code`): async JavaScript with `win`, `snap`, `click`, `type`, `keys`, `press`, `at`, `wheel`, `shot` and `ad` helpers, values kept between cells, the same allow-list and `headed` rule per step, a stop at the first failed step, and a screenshot of the window after any action. A long output is cut with its steps and error kept on the first page, and `offset` reads the rest of it without running the cell again. It is the desktop counterpart of browser_harness's `exec`.
 
 Native apps snapshot in about 0.2 s. Electron/Chromium apps (Slack, VS Code) expose deep trees: snapshot them with `--max-depth 3`; the tool suggests it on timeout.
 

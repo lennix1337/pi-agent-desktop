@@ -13,9 +13,24 @@ class CellError extends Error {}
 /** Variables a cell assigns without let/const live here until the session ends. */
 let context: Context | undefined;
 
-export function resetCells(): void { context = undefined; }
+/** The output of the last cell, kept so that reading the rest of it never runs the code a second time. */
+let last: { code: string; output: string } | undefined;
+
+export function resetCells(): void { context = undefined; last = undefined; }
+
+const READS_ON = ', which reads on in this output and runs nothing';
 
 const show = (v: unknown) => typeof v === 'string' ? v : JSON.stringify(v);
+
+const refused = (error: string): Result => ({ value: { ok: false, error }, text: JSON.stringify({ ok: false, error }), isError: true });
+
+/** An `exec` call with an offset asks for more of the last output. It never runs code: that would repeat the cell's actions. */
+function readOn(p: CellParams, offset: number): Result {
+  if (!last) return refused('offset reads on in the output of the last cell, and no cell has run since the tool loaded. Nothing ran. Run the code without offset; if it already acted, look at the window before acting again.');
+  if (p.code?.trim() && p.code !== last.code) return refused('offset reads on in the output of the last cell, and this is not its code. Nothing ran. To read on, send offset alone or with that cell\'s code; to run this code, send it without offset.');
+  if (offset >= last.output.length) return refused(`offset ${offset} is past the end of the last cell's output (${last.output.length} chars). Nothing ran.`);
+  return { value: { ok: true }, text: page(last.output, offset, p.limit, READS_ON), isError: false };
+}
 
 function failure(value: unknown): string {
   const err = (value as { error?: unknown }).error;
@@ -25,10 +40,8 @@ function failure(value: unknown): string {
 }
 
 export async function runCell(p: CellParams, signal?: AbortSignal, runner: Runner = run, bin = binaryPath()): Promise<Result> {
-  if (!p.code?.trim()) {
-    const error = 'exec needs code: the body of an async JavaScript function.';
-    return { value: { ok: false, error }, text: JSON.stringify({ ok: false, error }), isError: true };
-  }
+  if (p.offset) return readOn(p, p.offset);
+  if (!p.code?.trim()) return refused('exec needs code: the body of an async JavaScript function.');
   context ??= createContext({});
   const ctx = context as Record<string, unknown>;
   const seconds = Math.min(Math.max(p.timeout ?? 30, 1), 300);
@@ -141,7 +154,12 @@ export async function runCell(p: CellParams, signal?: AbortSignal, runner: Runne
   }
   const lines = [...logs];
   if (ret !== undefined) lines.push(`=> ${show(ret)}`);
-  if (steps.length) lines.push(`steps: ${steps.join(' · ')}`);
-  if (error) lines.push(`error: ${error}`);
-  return { value: { ok: !error, value: ret, steps, error }, text: page(lines.join('\n') || 'ok (no output)', p.offset, p.limit), image, isError: !!error };
+  last = { code: p.code, output: lines.join('\n') };
+  // Only the output is cut when it is long. The steps and the error follow the cut, so the first page always
+  // says what ran and what failed.
+  const paged = lines.length ? [page(last.output, 0, p.limit, READS_ON)] : [];
+  const summary: string[] = [];
+  if (steps.length) summary.push(`steps: ${steps.join(' · ')}`);
+  if (error) summary.push(`error: ${error}`);
+  return { value: { ok: !error, value: ret, steps, error }, text: [...paged, ...summary].join('\n') || 'ok (no output)', image, isError: !!error };
 }
