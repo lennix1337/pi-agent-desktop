@@ -89,11 +89,12 @@ export function optionsHint(help: string, rejected: string): string | undefined 
 
 export const SNAPSHOT_TIMEOUT_HINT = 'Chromium/Electron trees time out at any --timeout-ms; retry with --max-depth 3 (measured: 129 ms on Slack), or use screenshot.';
 
-export function page(text: string, offset = 0, limit = 12000): string {
+/** `how` ends the notice when repeating the call does something other than run it again. */
+export function page(text: string, offset = 0, limit = 12000, how = ''): string {
   if (offset === 0 && text.length <= limit) return text;
   const slice = text.slice(offset, offset + limit);
   const next = offset + slice.length;
-  return next < text.length ? `${slice}\n[truncated: ${text.length} chars; repeat with offset ${next}]` : slice;
+  return next < text.length ? `${slice}\n[truncated: ${text.length} chars; repeat with offset ${next}${how}]` : slice;
 }
 
 export async function execute(p: Params, signal?: AbortSignal, runner: Runner = run, bin = binaryPath()): Promise<Result> {
