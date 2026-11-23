@@ -15,7 +15,7 @@ The `desktop` tool takes either `command: "exec"` with `code` (a cell: several s
 - `ad("launch", app, "--activate")` waits up to 30 s for a window, as long as the default cell: give that cell `timeout: 60`.
 - `snap(...args)` (`snapshot -i` of `W`), `find(...args)`, `click(ref)`, `type(ref, text)`, `press(combo)`, `keys(text)` (one press per character, for fields without a ref).
 - `at(x, y)` clicks and `wheel(dy, x?, y?)` scrolls at window-screenshot pixels (focus and offset handled); both need `headed: true`.
-- `shot()`, `sleep(ms)`, `print(...)`, `ad(command, ...args)` for any other subcommand.
+- `shot(opts?)`, `sleep(ms)`, `print(...)`, `ad(command, ...args)` for any other subcommand. `shot()` accepts opt-in `{ ref, padding, rect, maxWidth, scale, format, quality }`; `noScreenshot: true` (default `false`) skips the automatic post-action screenshot of `W`.
 
 Values assigned without `let`/`const` persist to the next cell; `return` a value to see it. The cell stops at the first refused or failed step and reports every step it ran (`steps:`); calls made after it reported are refused, and calls it forgot to await are waited for. A cell that times out while its code still runs loses its variables, so that code cannot act later. An acting cell returns a screenshot of `W`, so check it before the next cell. Example: `await win("notepad"); await keys("hello"); await press("ctrl+s")`.
 
@@ -37,7 +37,8 @@ Chromium/Electron apps (Slack, VS Code, Teams) return `TIMEOUT` on a full `snaps
 - The desktop is the user's live session. Act only on the apps and windows the task names; observing commands are always fine.
 - Default delivery is semantic (accessibility actions, no cursor movement). `headed: true` moves the real mouse and keyboard and steals focus; use it only when a semantic action failed or the command is physical (`mouse-*`, `drag`, `hover`, `double-click`, `key-down/up`).
 - `close-app --force`, typing into password fields, notification actions and clipboard writes are effects: they need the task's authority like any other write.
-- `screenshot` returns an image; prefer `snapshot` text for reading.
+- `screenshot` returns an image; prefer `snapshot` text for reading. All screenshot optimizations are opt-in (defaults off): pass `screenshot: { ref, padding, rect: { x, y, w, h }, maxWidth, scale, format: "jpeg", quality }` on `screenshot`, `verify`, or `exec` (or `shot(opts)` in a cell) to crop to an element/rect, downscale, or encode as JPEG.
+- `nonIntrusive: true` (default `false`): guarantees the user's screen is not touched by refusing `headed: true`, `focus-window`, `focus`, `minimize`, `maximize`, `restore`, `open-system-surface`, and `launch --activate`. Occluded (behind) windows are captured via `--window-id`; minimized windows cannot be captured without restoring them.
 - Fewer turns: pass `verify: "<window id>"` on an action to get the after-screenshot in the same result instead of a separate `screenshot` call. Batch several presses or clicks only when no step depends on what the previous one showed.
 - Physical coordinates are virtual-desktop pixels: add the window's `bounds.x/y` from `list-windows` to a point inside the window screenshot. Run `focus-window` first. Every pointer command takes the point as `--xy X,Y` (or `--x X --y Y`); the tool converts to the form the binary parses.
 - Web pages inside a browser window usually expose nothing to `find`; use browser_harness, or screenshot + headed input when the session lives only in that window. `type` needs a snapshot ref, so without refs use `keys(text)` in a cell.

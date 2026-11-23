@@ -1,8 +1,18 @@
 import { createContext, runInContext, type Context } from 'node:vm';
-import { binaryPath, execute, OBSERVE, page, plan, run, type Result, type Runner } from './cli.ts';
+import { binaryPath, execute, OBSERVE, page, plan, run, type Params, type Result, type Runner } from './cli.ts';
+import type { ScreenshotOptions } from './image.ts';
 
 /** One `exec` call: the body of an async JavaScript function run with the desktop helpers. */
-export interface CellParams { code?: string; headed?: boolean; timeout?: number; offset?: number; limit?: number }
+export interface CellParams {
+  code?: string;
+  headed?: boolean;
+  nonIntrusive?: boolean;
+  noScreenshot?: boolean;
+  screenshot?: ScreenshotOptions;
+  timeout?: number;
+  offset?: number;
+  limit?: number;
+}
 
 interface Win { id: string; app_name: string; title: string; bounds: { x: number; y: number; width: number; height: number }; is_focused?: boolean; minimized?: boolean }
 
@@ -47,29 +57,30 @@ export async function runCell(p: CellParams, signal?: AbortSignal, runner: Runne
   const seconds = Math.min(Math.max(p.timeout ?? 30, 1), 300);
   const deadline = Date.now() + seconds * 1000;
   const logs: string[] = [], steps: string[] = [];
-  let image: string | undefined, acted = false, shotAfterAct = false, closed = false;
+  let image: string | undefined, imageMimeType: 'image/png' | 'image/jpeg' | undefined, acted = false, shotAfterAct = false, closed = false;
   /** Calls in flight, so a cell that forgot an await still reports every effect it started. */
   const running = new Map<Promise<unknown>, string>();
-  const call = (command: string, args: unknown[], record = true): Promise<unknown> => {
-    const c = step(command, args, record);
+  const call = (command: string, args: unknown[], record = true, extra?: Partial<Params>, windowBounds?: Win['bounds']): Promise<unknown> => {
+    const c = step(command, args, record, extra, windowBounds);
     running.set(c, [command, ...args].join(' '));
     c.then(() => running.delete(c), () => running.delete(c));
     return c;
   };
 
   /** Runs one agent-desktop command; throws on refusal or failure so the cell stops at the first error. */
-  const step = async (command: string, args: unknown[], record: boolean): Promise<unknown> => {
+  const step = async (command: string, args: unknown[], record: boolean, extra?: Partial<Params>, windowBounds?: Win['bounds']): Promise<unknown> => {
     if (closed) throw new CellError('this cell already ended; its later desktop calls are refused');
     if (signal?.aborted || Date.now() > deadline) throw new CellError(`cell stopped (timeout ${seconds}s or abort) before ${command}`);
     const observe = OBSERVE.has(command);
-    const params = { command, args: args.map(String), headed: observe ? undefined : p.headed, limit: Number.MAX_SAFE_INTEGER };
+    const strArgs = args.map(String);
+    const params: Params = { command, args: strArgs, headed: observe ? undefined : p.headed, nonIntrusive: p.nonIntrusive, limit: Number.MAX_SAFE_INTEGER, ...extra };
     const planned = plan(params);
     if ('error' in planned) throw new CellError(`${command} refused, not run: ${planned.error}`);
-    const r = await execute(params, signal, runner, bin);
+    const r = await execute(params, signal, runner, bin, windowBounds);
     if (!observe) { acted = true; shotAfterAct = false; }
-    if (record) steps.push(`${command} ${params.args.join(' ')}`.trim() + (r.isError ? ' FAILED' : ''));
+    if (record) steps.push(`${command} ${strArgs.join(' ')}`.trim() + (r.isError ? ' FAILED' : ''));
     if (r.isError) throw new CellError(`${command} failed: ${failure(r.value)}`);
-    if (r.image) { image = r.image; if (acted) shotAfterAct = true; }
+    if (r.image) { image = r.image; imageMimeType = r.imageMimeType; if (acted) shotAfterAct = true; }
     const v = r.value as { data?: unknown };
     return v && typeof v === 'object' && 'data' in v ? v.data : v;
   };
@@ -119,7 +130,11 @@ export async function runCell(p: CellParams, signal?: AbortSignal, runner: Runne
       const [X, Y] = point(x ?? b.width / 2, y ?? b.height / 2);
       return call('mouse-wheel', [`--x=${X}`, `--y=${Y}`, `--dy=${dy}`]);
     },
-    shot: async () => { await call('screenshot', target()); return 'screenshot attached'; },
+    shot: async (opts?: ScreenshotOptions) => {
+      const merged = opts || p.screenshot ? { ...p.screenshot, ...opts } : undefined;
+      await call('screenshot', target(), true, merged ? { screenshot: merged } : undefined, (ctx.W as Win | undefined)?.bounds);
+      return 'screenshot attached';
+    },
   });
 
   let ret: unknown, error: string | undefined, timer: NodeJS.Timeout | undefined, live = false;
@@ -148,9 +163,9 @@ export async function runCell(p: CellParams, signal?: AbortSignal, runner: Runne
   }
   // An acting cell answers with what the window looks like now, so the agent never has to guess whether input landed.
   const w = ctx.W as Win | undefined;
-  if (acted && !shotAfterAct && w?.id) {
-    const after = await execute({ command: 'screenshot', args: ['--window-id', w.id] }, undefined, runner, bin);
-    if (after.image) { image = after.image; steps.push(`screenshot --window-id ${w.id} (after)`); }
+  if (acted && !shotAfterAct && !p.noScreenshot && w?.id) {
+    const after = await execute({ command: 'screenshot', args: ['--window-id', w.id], screenshot: p.screenshot, nonIntrusive: p.nonIntrusive }, undefined, runner, bin, w.bounds);
+    if (after.image) { image = after.image; imageMimeType = after.imageMimeType; steps.push(`screenshot --window-id ${w.id} (after)`); }
   }
   const lines = [...logs];
   if (ret !== undefined) lines.push(`=> ${show(ret)}`);
@@ -161,5 +176,5 @@ export async function runCell(p: CellParams, signal?: AbortSignal, runner: Runne
   const summary: string[] = [];
   if (steps.length) summary.push(`steps: ${steps.join(' · ')}`);
   if (error) summary.push(`error: ${error}`);
-  return { value: { ok: !error, value: ret, steps, error }, text: [...paged, ...summary].join('\n') || 'ok (no output)', image, isError: !!error };
+  return { value: { ok: !error, value: ret, steps, error }, text: [...paged, ...summary].join('\n') || 'ok (no output)', image, imageMimeType, isError: !!error };
 }

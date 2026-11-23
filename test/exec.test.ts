@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { beforeEach, test } from 'node:test';
+import { PNG } from 'pngjs';
 import type { Runner } from '../src/cli.ts';
 import { resetCells, runCell } from '../src/exec.ts';
+import { readPngDimensions } from '../src/image.ts';
 
 const WINDOWS = [
   { id: 'w-1', app_name: 'WindowsTerminal.exe', title: 'pi', bounds: { x: 0, y: 0, width: 800, height: 600 }, is_focused: true },
@@ -191,4 +193,51 @@ test('offset without a matching stored output is refused with the next step, nev
   const forgotten = await runCell({ offset: 12000 }, undefined, d.runner, 'bin');
   assert.match(forgotten.text, /no cell has run since the tool loaded/);
   assert.equal(d.calls.length, sent);
+});
+
+test('noScreenshot skips the automatic post-action screenshot in exec cells', async () => {
+  const d = desktop();
+  const r = await runCell({ code: 'await win("brave"); await press("tab")', noScreenshot: true }, undefined, d.runner, 'bin');
+  assert.equal(r.isError, false, r.text);
+  assert.equal(r.image, undefined);
+  assert.ok(!d.names().includes('screenshot'));
+});
+
+test('shot({ref}) inside exec crops to element bounds using W.bounds without extra list-windows', async () => {
+  const calls: string[][] = [];
+  const runner: Runner = async (_bin, args) => {
+    calls.push(args);
+    if (args[0] === 'list-windows') return { code: 0, stdout: JSON.stringify({ ok: true, data: WINDOWS }), stderr: '' };
+    if (args[0] === 'screenshot') {
+      const png = new PNG({ width: 1000, height: 800 });
+      writeFileSync(args.at(-1)!, PNG.sync.write(png));
+      return { code: 0, stdout: '{"ok":true}', stderr: '' };
+    }
+    if (args[0] === 'get') {
+      // w-2 bounds are x:6, y:16, width:1000, height:800
+      return { code: 0, stdout: JSON.stringify({ ok: true, data: { value: { x: 106, y: 116, width: 200, height: 100 } } }), stderr: '' };
+    }
+    return { code: 0, stdout: '{"ok":true,"data":{}}', stderr: '' };
+  };
+  const r = await runCell({
+    code: 'await win("brave", "google"); return await shot({ ref: "@e1", padding: 10, maxWidth: 110 })',
+  }, undefined, runner, 'bin');
+  assert.equal(r.isError, false, r.text);
+  assert.equal(r.imageMimeType, 'image/png');
+  // 200 + 2*10 = 220w, 100 + 2*10 = 120h -> scaled to maxWidth 110 -> 110x60
+  assert.deepEqual(readPngDimensions(Buffer.from(r.image!, 'base64')), { width: 110, height: 60 });
+  assert.deepEqual(calls.map(c => c[0]), ['list-windows', 'screenshot', 'get']);
+});
+
+test('nonIntrusive in exec refuses focus-window and launch --activate while allowing semantic actions', async () => {
+  const d = desktop();
+  const r1 = await runCell({ code: 'await win("brave"); await ad("focus-window", "--window-id", W.id)', nonIntrusive: true }, undefined, d.runner, 'bin');
+  assert.equal(r1.isError, true);
+  assert.match(r1.text, /nonIntrusive/);
+  assert.ok(!d.names().includes('focus-window'));
+
+  const d2 = desktop();
+  const r2 = await runCell({ code: 'await win("brave"); await click("@e1")', nonIntrusive: true, noScreenshot: true }, undefined, d2.runner, 'bin');
+  assert.equal(r2.isError, false, r2.text);
+  assert.deepEqual(d2.names(), ['list-windows', 'click']);
 });
