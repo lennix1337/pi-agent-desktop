@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { accessSync, chmodSync, constants, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir, platform, arch } from 'node:os';
 import { dirname, join } from 'node:path';
+import { processScreenshot, readPngDimensions, validateScreenshotOptions, type Bounds, type ScreenshotOptions } from './image.ts';
 
 /** Commands that only observe. Everything else changes desktop state. */
 export const OBSERVE = new Set([
@@ -21,10 +22,24 @@ export const ACT = new Set([
   'restore', 'open-system-surface', 'dismiss-notification', 'dismiss-all-notifications', 'notification-action', 'clipboard-set', 'clipboard-clear',
 ]);
 
+/** Commands that change window focus or desktop/window layout; refused in nonIntrusive mode. */
+export const INTRUSIVE = new Set([
+  'focus-window', 'focus', 'minimize', 'maximize', 'restore', 'open-system-surface',
+]);
+
 export const COMMANDS = [...OBSERVE, ...ACT, ...PHYSICAL];
 
-export interface Params { command?: string; args?: string[]; headed?: boolean; offset?: number; limit?: number; verify?: string }
-export interface Result { value: unknown; text: string; image?: string; isError: boolean }
+export interface Params {
+  command?: string;
+  args?: string[];
+  headed?: boolean;
+  nonIntrusive?: boolean;
+  offset?: number;
+  limit?: number;
+  verify?: string;
+  screenshot?: ScreenshotOptions;
+}
+export interface Result { value: unknown; text: string; image?: string; imageMimeType?: 'image/png' | 'image/jpeg'; isError: boolean }
 export type Runner = (bin: string, args: string[], signal?: AbortSignal) => Promise<{ code: number; stdout: string; stderr: string }>;
 
 export function binaryPath(): string {
@@ -71,8 +86,20 @@ export function plan(p: Params): { error: string } | { argv: string[] } {
   if ((p.args ?? []).some(a => typeof a !== 'string')) return { error: 'args must be strings.' };
   const args = pointArgs(command, p.args ?? []);
   if (args.includes('--headed')) return { error: 'Pass headed: true instead of --headed in args.' };
+  if (p.nonIntrusive) {
+    if (p.headed) return { error: 'nonIntrusive cannot be combined with headed: true (headed moves the cursor and changes focus).' };
+    if (INTRUSIVE.has(command)) return { error: `${command} changes window focus or layout; refused in nonIntrusive mode.` };
+    if (command === 'launch' && args.includes('--activate')) return { error: 'launch --activate steals focus; omit --activate in nonIntrusive mode.' };
+  }
   if (PHYSICAL.has(command) && !p.headed) return { error: `${command} moves the real cursor/keyboard; set headed: true only when the task needs physical input.` };
   if (p.verify !== undefined && OBSERVE.has(command)) return { error: 'verify attaches a screenshot after an action; observing commands need none.' };
+  if (p.screenshot !== undefined) {
+    if (command !== 'screenshot' && p.verify === undefined) {
+      return { error: 'screenshot options apply only to the screenshot command or when verify is set.' };
+    }
+    const shotErr = validateScreenshotOptions(p.screenshot);
+    if (shotErr) return { error: shotErr };
+  }
   if (args.includes('--debug')) return { error: '--debug writes files beside the binary; not supported here.' };
   return { argv: [command, ...args, ...(p.headed ? ['--headed'] : [])] };
 }
@@ -97,7 +124,60 @@ export function page(text: string, offset = 0, limit = 12000, how = ''): string 
   return next < text.length ? `${slice}\n[truncated: ${text.length} chars; repeat with offset ${next}${how}]` : slice;
 }
 
-export async function execute(p: Params, signal?: AbortSignal, runner: Runner = run, bin = binaryPath()): Promise<Result> {
+function argFlagValue(args: string[], flag: string): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === flag && i + 1 < args.length) return args[i + 1];
+    if (args[i].startsWith(`${flag}=`)) return args[i].slice(flag.length + 1);
+  }
+  return undefined;
+}
+
+async function resolveRefCrop(
+  ref: string,
+  pngBuffer: Buffer,
+  args: string[],
+  verifyId: string | undefined,
+  signal: AbortSignal | undefined,
+  runner: Runner,
+  bin: string,
+  knownWindowBounds?: Bounds,
+): Promise<Bounds> {
+  const getOut = await runner(bin, ['get', ref, '--property', 'bounds'], signal);
+  let parsed: { ok?: boolean; data?: { value?: Bounds }; error?: { message?: string } };
+  try { parsed = JSON.parse(getOut.stdout); } catch { throw new Error(`failed to parse bounds for ${ref}`); }
+  const el = parsed?.data?.value;
+  if (getOut.code !== 0 || parsed?.ok === false || !el || !Number.isFinite(el.x) || !Number.isFinite(el.y)) {
+    throw new Error(parsed?.error?.message ?? `could not resolve bounds for ${ref}`);
+  }
+
+  let winBounds = knownWindowBounds;
+  const targetWinId = verifyId ?? argFlagValue(args, '--window-id');
+  const targetApp = argFlagValue(args, '--app');
+  if (!winBounds && (targetWinId || targetApp)) {
+    const listArgs = targetApp ? ['list-windows', '--app', targetApp] : ['list-windows'];
+    const listOut = await runner(bin, listArgs, signal);
+    try {
+      const wins = JSON.parse(listOut.stdout)?.data as { id?: string; is_focused?: boolean; bounds?: Bounds }[] | undefined;
+      const match = targetWinId ? wins?.find(w => w.id === targetWinId) : (wins?.find(w => w.is_focused) ?? wins?.[0]);
+      winBounds = match?.bounds;
+    } catch { /* fall through to screen-relative fallback */ }
+  }
+
+  if (!winBounds || winBounds.width <= 0 || winBounds.height <= 0) {
+    return el;
+  }
+  const dims = readPngDimensions(pngBuffer);
+  const scaleX = dims && dims.width > 0 ? dims.width / winBounds.width : 1;
+  const scaleY = dims && dims.height > 0 ? dims.height / winBounds.height : 1;
+  return {
+    x: (el.x - winBounds.x) * scaleX,
+    y: (el.y - winBounds.y) * scaleY,
+    width: el.width * scaleX,
+    height: el.height * scaleY,
+  };
+}
+
+export async function execute(p: Params, signal?: AbortSignal, runner: Runner = run, bin = binaryPath(), windowBounds?: Bounds): Promise<Result> {
   const planned = plan(p);
   if ('error' in planned) return { value: { ok: false, error: planned.error }, text: JSON.stringify({ ok: false, error: planned.error }), isError: true };
   let argv = planned.argv, shot: string | undefined, dir: string | undefined;
@@ -110,13 +190,33 @@ export async function execute(p: Params, signal?: AbortSignal, runner: Runner = 
     const out = await runner(bin, argv, signal);
     let value: unknown;
     try { value = JSON.parse(out.stdout); } catch { value = { ok: out.code === 0, stdout: out.stdout.trim(), stderr: out.stderr.trim() }; }
-    const ok = out.code === 0 && (value as { ok?: unknown }).ok !== false;
-    let image = shot && existsSync(shot) ? readFileSync(shot).toString('base64') : undefined;
+    let ok = out.code === 0 && (value as { ok?: unknown }).ok !== false;
+    let rawImage = shot && existsSync(shot) ? readFileSync(shot) : undefined;
     if (ok && p.verify) {
       dir ??= mkdtempSync(join(tmpdir(), 'pi-agent-desktop-'));
       const after = join(dir, 'after.png');
       await runner(bin, ['screenshot', '--window-id', p.verify, after], signal);
-      if (existsSync(after)) image = readFileSync(after).toString('base64');
+      if (existsSync(after)) rawImage = readFileSync(after);
+    }
+    let image: string | undefined;
+    let imageMimeType: 'image/png' | 'image/jpeg' | undefined;
+    if (rawImage) {
+      if (p.screenshot) {
+        try {
+          const resolvedCrop = p.screenshot.ref
+            ? await resolveRefCrop(p.screenshot.ref, rawImage, p.args ?? [], p.verify, signal, runner, bin, windowBounds)
+            : undefined;
+          const processed = processScreenshot(rawImage, p.screenshot, resolvedCrop);
+          image = processed.buffer.toString('base64');
+          imageMimeType = processed.mimeType;
+        } catch (err) {
+          ok = false;
+          const message = err instanceof Error ? err.message : String(err);
+          value = { ok: false, error: { code: 'SCREENSHOT_PROCESS_FAILED', message } };
+        }
+      } else {
+        image = rawImage.toString('base64');
+      }
     }
     const rejected = !ok ? UNEXPECTED_ARG.exec(String((value as { error?: { message?: unknown } }).error?.message ?? ''))?.[1] : undefined;
     if (rejected && (value as { error?: { code?: string } }).error?.code === 'INVALID_ARGS') {
@@ -127,7 +227,7 @@ export async function execute(p: Params, signal?: AbortSignal, runner: Runner = 
     const timedOut = argv[0] === 'snapshot' && (value as { error?: { code?: string } }).error?.code === 'TIMEOUT';
     if (timedOut) (value as Record<string, unknown>).hint = SNAPSHOT_TIMEOUT_HINT;
     const text = page(typeof value === 'string' ? value : JSON.stringify(value), p.offset, p.limit);
-    return { value, text, image, isError: !ok };
+    return { value, text, image, imageMimeType, isError: !ok };
   } finally {
     if (dir) rmSync(dir, { recursive: true, force: true });
   }

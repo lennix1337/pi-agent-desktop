@@ -36,6 +36,9 @@ Native apps snapshot in about 0.2 s. Electron/Chromium apps (Slack, VS Code) exp
 
 - Semantic, headless delivery by default: no cursor movement, no focus stealing.
 - Physical input (`mouse-*`, `drag`, `hover`, `double-click`, `key-down/up`) is refused unless the call sets `headed: true`; `--headed` cannot be smuggled through `args`.
+- Opt-in **`nonIntrusive: true`** (default `false`): refuses `headed: true`, focus-stealing commands (`focus-window`, `focus`, `minimize`, `maximize`, `restore`, `open-system-surface`), and `launch --activate` so the user's screen is never disturbed. Occluded (unfocused/behind) windows are still captured via `--window-id`; minimized windows cannot be captured without restoring them.
+- Opt-in **`screenshot` options** (default off — full window PNG unchanged): `{ ref, padding, rect: { x, y, w, h }, maxWidth, scale, format: "png" | "jpeg", quality }` on `screenshot`, `verify`, or `exec` (`shot(opts)` and post-action screenshots) to crop to an element or rect, downscale, and/or re-encode as JPEG.
+- Opt-in **`noScreenshot: true`** (default `false`): in `exec` cells, skips the automatic post-action screenshot of `W`.
 - Commands run without a shell; `batch`, `session`, `cursor-overlay` and `--debug` are not exposed.
 - macOS: grant Accessibility (and Screen Recording for screenshots) to the terminal that runs Pi.
 

@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { PNG } from 'pngjs';
 import { execute, page, plan, type Runner } from '../src/cli.ts';
+import { readPngDimensions } from '../src/image.ts';
+
+function fakePng(width: number, height: number): Buffer {
+  const png = new PNG({ width, height });
+  return PNG.sync.write(png);
+}
 
 const fake = (stdout: string, code = 0, onRun?: (args: string[]) => void): Runner => async (_bin, args) => {
   onRun?.(args);
@@ -123,5 +130,69 @@ test('other failures do not trigger a help lookup', async () => {
   const runner: Runner = async (_bin, args) => { calls.push(args); return { code: 1, stdout: '{"ok":false,"error":{"code":"STALE_REF","message":"unexpected argument \'x\'"}}', stderr: '' }; };
   const r = await execute({ command: 'click', args: ['@e1'] }, undefined, runner, 'bin');
   assert.equal(r.isError, true);
+  assert.equal(calls.length, 1);
+});
+
+test('nonIntrusive refuses headed, focus-stealing commands, and launch --activate, while allowing semantic actions', () => {
+  assert.match((plan({ command: 'click', args: ['@e1'], headed: true, nonIntrusive: true }) as { error: string }).error, /nonIntrusive/);
+  assert.match((plan({ command: 'focus-window', args: ['--window-id', 'w-1'], nonIntrusive: true }) as { error: string }).error, /nonIntrusive/);
+  assert.match((plan({ command: 'restore', args: ['--window-id', 'w-1'], nonIntrusive: true }) as { error: string }).error, /nonIntrusive/);
+  assert.match((plan({ command: 'launch', args: ['notepad', '--activate'], nonIntrusive: true }) as { error: string }).error, /--activate/);
+
+  assert.deepEqual(plan({ command: 'click', args: ['@e1'], nonIntrusive: true }), { argv: ['click', '@e1'] });
+  assert.deepEqual(plan({ command: 'launch', args: ['notepad'], nonIntrusive: true }), { argv: ['launch', 'notepad'] });
+  assert.deepEqual(plan({ command: 'screenshot', args: ['--window-id', 'w-1'], nonIntrusive: true }), { argv: ['screenshot', '--window-id', 'w-1'] });
+});
+
+test('screenshot options are refused without screenshot command or verify, and validate bounds/format', () => {
+  assert.match((plan({ command: 'click', args: ['@e1'], screenshot: { format: 'jpeg' } }) as { error: string }).error, /screenshot options/);
+  assert.match((plan({ command: 'screenshot', screenshot: { ref: '@e1', rect: { x: 0, y: 0, w: 10, h: 10 } } }) as { error: string }).error, /both ref and rect/);
+  assert.ok('argv' in plan({ command: 'click', args: ['@e1'], verify: 'w-1', screenshot: { ref: '@e1', format: 'jpeg' } }));
+});
+
+test('screenshot with ref crops to element bounds relative to window and converts to jpeg', async () => {
+  const calls: string[][] = [];
+  const runner: Runner = async (_bin, args) => {
+    calls.push(args);
+    if (args[0] === 'screenshot') {
+      writeFileSync(args.at(-1)!, fakePng(400, 300));
+      return { code: 0, stdout: '{"ok":true}', stderr: '' };
+    }
+    if (args[0] === 'get') {
+      return { code: 0, stdout: JSON.stringify({ ok: true, data: { value: { x: 150, y: 120, width: 80, height: 40 } } }), stderr: '' };
+    }
+    if (args[0] === 'list-windows') {
+      return { code: 0, stdout: JSON.stringify({ ok: true, data: [{ id: 'w-1', bounds: { x: 100, y: 100, width: 400, height: 300 } }] }), stderr: '' };
+    }
+    return { code: 0, stdout: '{"ok":true}', stderr: '' };
+  };
+  const r = await execute({
+    command: 'screenshot',
+    args: ['--window-id', 'w-1'],
+    screenshot: { ref: '@e1', padding: 5, maxWidth: 45, format: 'jpeg', quality: 75 },
+  }, undefined, runner, 'bin');
+  assert.equal(r.isError, false, r.text);
+  assert.equal(r.imageMimeType, 'image/jpeg');
+  const buf = Buffer.from(r.image!, 'base64');
+  assert.equal(buf[0], 0xff);
+  assert.equal(buf[1], 0xd8);
+  assert.deepEqual(calls.map(c => c[0]), ['screenshot', 'get', 'list-windows']);
+});
+
+test('screenshot with rect crops without calling get or list-windows', async () => {
+  const calls: string[][] = [];
+  const runner: Runner = async (_bin, args) => {
+    calls.push(args);
+    writeFileSync(args.at(-1)!, fakePng(200, 150));
+    return { code: 0, stdout: '{"ok":true}', stderr: '' };
+  };
+  const r = await execute({
+    command: 'screenshot',
+    args: ['--window-id', 'w-1'],
+    screenshot: { rect: { x: 10, y: 20, w: 60, h: 40 } },
+  }, undefined, runner, 'bin');
+  assert.equal(r.isError, false, r.text);
+  assert.equal(r.imageMimeType, 'image/png');
+  assert.deepEqual(readPngDimensions(Buffer.from(r.image!, 'base64')), { width: 60, height: 40 });
   assert.equal(calls.length, 1);
 });

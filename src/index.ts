@@ -12,7 +12,25 @@ export default function extension(pi: ExtensionAPI) {
       code: Type.Optional(Type.String({ maxLength: 65536, description: 'exec: body of an async JavaScript function using the helpers; return a value to see it.' })),
       args: Type.Optional(Type.Array(Type.String({ maxLength: 32768 }), { maxItems: 64, description: 'Arguments after the subcommand, e.g. ["--app","notepad.exe","-i"] or ["@e3"]. Run without a shell. Never include credentials without task authority.' })),
       headed: Type.Optional(Type.Boolean({ description: 'Physical input: real cursor/keyboard and focus changes.' })),
-      verify: Type.Optional(Type.String({ maxLength: 64, description: 'Window id (from list-windows) to screenshot right after a successful action; the PNG comes back in the same result, saving a separate screenshot call.' })),
+      nonIntrusive: Type.Optional(Type.Boolean({ description: 'Opt-in: refuse headed input, focus-stealing commands (focus-window, focus, launch --activate, minimize/maximize/restore) so the user screen is not disturbed.' })),
+      noScreenshot: Type.Optional(Type.Boolean({ description: 'exec: skip the automatic post-action screenshot of W.' })),
+      verify: Type.Optional(Type.String({ maxLength: 64, description: 'Window id (from list-windows) to screenshot right after a successful action; the image comes back in the same result, saving a separate screenshot call.' })),
+      screenshot: Type.Optional(Type.Object({
+        ref: Type.Optional(Type.String({ maxLength: 64, description: 'Crop screenshot to this element @ref bounds.' })),
+        padding: Type.Optional(Type.Number({ minimum: 0, description: 'Extra pixels around cropped ref/rect (default 0).' })),
+        rect: Type.Optional(Type.Object({
+          x: Type.Number({ minimum: 0 }),
+          y: Type.Number({ minimum: 0 }),
+          w: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
+          h: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
+          width: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
+          height: Type.Optional(Type.Number({ exclusiveMinimum: 0 })),
+        }, { additionalProperties: false, description: 'Crop to explicit {x,y,w,h} (or width/height) relative to the window.' })),
+        maxWidth: Type.Optional(Type.Integer({ minimum: 1, description: 'Downscale proportionally if width exceeds maxWidth.' })),
+        scale: Type.Optional(Type.Number({ exclusiveMinimum: 0, maximum: 1, description: 'Downscale factor in (0, 1].' })),
+        format: Type.Optional(Type.Unsafe<'png' | 'jpeg'>({ type: 'string', enum: ['png', 'jpeg'], description: 'Output image format (default png).' })),
+        quality: Type.Optional(Type.Number({ minimum: 1, maximum: 100, description: 'JPEG quality 1-100 (default 80).' })),
+      }, { additionalProperties: false, description: 'Opt-in screenshot crop/resize/format options (for screenshot, verify, or exec).' })),
       timeout: Type.Optional(Type.Number({ minimum: 1, maximum: 300, description: 'exec: seconds, default 30.' })),
       offset: Type.Optional(Type.Integer({ minimum: 0, description: 'Character offset into a long result.' })),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50000, description: 'Characters returned; default 12000.' })),
@@ -20,7 +38,7 @@ export default function extension(pi: ExtensionAPI) {
     async execute(_id, params, signal) {
       const result = params.command === 'exec' ? await runCell(params, signal) : await execute(params, signal);
       const content: ({ type: 'text'; text: string } | { type: 'image'; mimeType: string; data: string })[] = [{ type: 'text', text: result.text }];
-      if (result.image) content.push({ type: 'image', mimeType: 'image/png', data: result.image });
+      if (result.image) content.push({ type: 'image', mimeType: result.imageMimeType ?? 'image/png', data: result.image });
       return { content, details: result.value, isError: result.isError };
     },
   });
